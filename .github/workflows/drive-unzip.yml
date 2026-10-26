@@ -1,0 +1,64 @@
+
+name: Extract ZIPs from Google Drive folder
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          python -m pip install gdown
+          sudo apt-get update
+          sudo apt-get install -y unzip
+
+      - name: Download folder
+        run: |
+          mkdir -p downloads imported
+          gdown \
+            "https://drive.google.com/drive/folders/10hsahcfN7Qzw1WkjkCWSMOmyM26n5C0S" \
+            --folder \
+            -O downloads
+
+      - name: Extract every ZIP
+        run: |
+          count=0
+          while IFS= read -r -d '' file; do
+            count=$((count + 1))
+            name=$(basename "$file" .zip)
+            mkdir -p "imported/$name"
+            unzip -o "$file" -d "imported/$name"
+          done < <(find downloads -type f -iname '*.zip' -print0)
+
+          if [ "$count" -eq 0 ]; then
+            echo "No ZIP archives found"
+            exit 1
+          fi
+
+          echo "Extracted $count ZIP archive(s)"
+
+      - name: Check file size limits
+        run: |
+          find imported -type f -size +100M -print
+
+      - name: Commit extracted files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+          git add imported
+          if ! git diff --cached --quiet; then
+            git commit -m "Extract Google Drive ZIP archives"
+            git push
+          else
+            echo "No extracted changes to commit"
+          fi
